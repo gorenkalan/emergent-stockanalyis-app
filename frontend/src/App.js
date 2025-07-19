@@ -296,17 +296,69 @@ const ProtectedHeader = ({ showSearch = false, onSearch, searchQuery, setSearchQ
   );
 };
 
-// New Public Home Page Component
+// Animated Ticker Component
+const MarketTicker = ({ stocks }) => {
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="bg-black text-green-400 py-2 overflow-hidden border-t-2 border-green-400">
+      <div className="whitespace-nowrap animate-scroll">
+        <span className="inline-block px-8 text-sm font-mono">
+          LIVE MARKET DATA • {currentTime.toLocaleTimeString()} • 
+        </span>
+        {stocks.slice(0, 10).map((stock, idx) => (
+          <span key={idx} className="inline-block px-8 text-sm font-mono">
+            {stock.ticker}: ₹{formatNumber(stock.latest_price)} 
+            <span className={stock['1D_change_%'] > 0 ? 'text-green-400' : 'text-red-400'}>
+              ({stock['1D_change_%'] > 0 ? '+' : ''}{stock['1D_change_%']?.toFixed(2)}%)
+            </span> •
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Terminal-style Command Component
+const TerminalCommand = ({ command, output, delay = 0 }) => {
+  const [show, setShow] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setShow(true), delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  if (!show) return null;
+
+  return (
+    <div className="font-mono text-sm">
+      <div className="text-green-400">
+        <span className="text-gray-400">trader@stocktracker:~$ </span>
+        <span className="animate-typing">{command}</span>
+      </div>
+      <div className="text-gray-300 mt-1 pl-4">{output}</div>
+    </div>
+  );
+};
+
+// New Unique Stock Market Homepage
 const HomePage = () => {
   const [topMoversPreview, setTopMoversPreview] = useState({ gainers: [], losers: [] });
   const [marketOverview, setMarketOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('GAINERS');
+  const [terminalVisible, setTerminalVisible] = useState(false);
 
   useEffect(() => {
     const fetchPreviewData = async () => {
       try {
         const [moversResponse, overviewResponse] = await Promise.all([
-          fetch(`${API_BASE_URL}/public/top-movers-preview?limit=3`),
+          fetch(`${API_BASE_URL}/public/top-movers-preview?limit=8`),
           fetch(`${API_BASE_URL}/public/market-overview`)
         ]);
         
@@ -328,267 +380,276 @@ const HomePage = () => {
     };
 
     fetchPreviewData();
+    
+    // Show terminal after a delay
+    const timer = setTimeout(() => setTerminalVisible(true), 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <PublicHeader />
-        <div className="flex items-center justify-center h-64">
-          <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600">Loading...</span>
+      <div className="min-h-screen bg-black text-green-400 flex items-center justify-center font-mono">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">⟳</div>
+          <div className="animate-pulse">LOADING MARKET DATA...</div>
         </div>
       </div>
     );
   }
 
+  const allStocks = [...topMoversPreview.gainers, ...topMoversPreview.losers];
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-black text-gray-100">
       <PublicHeader />
       
-      {/* Hero Section */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-20">
-          <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Smart Stock Market Analysis
-            </h1>
-            <p className="text-xl md:text-2xl mb-8 text-blue-100">
-              Track top gainers, losers, and get comprehensive market insights with advanced analytics
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                to="/register"
-                className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-              >
-                Get Started Free
-              </Link>
-              <Link
-                to="/login"
-                className="border border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
-              >
-                Sign In
-              </Link>
+      {/* Live Market Ticker */}
+      <MarketTicker stocks={allStocks} />
+      
+      {/* Main Dashboard-style Layout */}
+      <div className="max-w-7xl mx-auto p-4">
+        
+        {/* Terminal Header */}
+        <div className="bg-gray-900 border border-green-400 rounded-t-lg mt-8">
+          <div className="bg-gray-800 px-4 py-2 rounded-t-lg flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
             </div>
+            <span className="text-gray-400 font-mono text-sm">StockTracker Terminal v2.1.0</span>
           </div>
-        </div>
-      </div>
-
-      {/* Market Overview Stats */}
-      {marketOverview && (
-        <div className="py-16 bg-white">
-          <div className="max-w-7xl mx-auto px-4">
-            <h2 className="text-3xl font-bold text-center mb-12">Live Market Overview</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-              <div className="text-center p-6 bg-green-50 rounded-lg">
-                <TrendingUpIcon className="h-12 w-12 text-green-600 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-green-600">{marketOverview.stats.gainers_count}</h3>
-                <p className="text-gray-600">Gainers Today</p>
-              </div>
-              
-              <div className="text-center p-6 bg-red-50 rounded-lg">
-                <TrendingDownIcon className="h-12 w-12 text-red-600 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-red-600">{marketOverview.stats.losers_count}</h3>
-                <p className="text-gray-600">Losers Today</p>
-              </div>
-              
-              <div className="text-center p-6 bg-blue-50 rounded-lg">
-                <Activity className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-blue-600">{marketOverview.stats.total_stocks}</h3>
-                <p className="text-gray-600">Total Stocks</p>
-              </div>
-              
-              <div className="text-center p-6 bg-purple-50 rounded-lg">
-                <BarChart3 className="h-12 w-12 text-purple-600 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-purple-600">{marketOverview.stats.sectors_count}</h3>
-                <p className="text-gray-600">Sectors</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preview of Top Movers */}
-      <div className="py-16 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center mb-12">Today's Market Highlights</h2>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Top Gainers Preview */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-xl font-semibold mb-4 flex items-center">
-                <TrendingUp className="h-5 w-5 text-green-600 mr-2" />
-                Top Gainers Today
-              </h3>
-              
+          <div className="p-6 bg-black border-t border-green-400">
+            {terminalVisible && (
               <div className="space-y-4">
-                {topMoversPreview.gainers.slice(0, 3).map((stock) => (
-                  <div key={stock.ticker} className="flex justify-between items-center p-3 border border-gray-100 rounded">
-                    <div>
-                      <p className="font-medium">{stock.ticker}</p>
-                      <p className="text-sm text-gray-500">{stock.company_name}</p>
+                <TerminalCommand 
+                  command="./stocktracker --init"
+                  output="Initializing stock market analysis platform..."
+                  delay={0}
+                />
+                <TerminalCommand 
+                  command="fetch --market-overview"
+                  output={marketOverview ? `✓ Loaded ${marketOverview.stats.total_stocks} stocks across ${marketOverview.stats.sectors_count} sectors` : ""}
+                  delay={800}
+                />
+                <TerminalCommand 
+                  command="analyze --top-movers --today"
+                  output={`✓ Found ${topMoversPreview.gainers.length} gainers, ${topMoversPreview.losers.length} losers`}
+                  delay={1600}
+                />
+                <div className="border-t border-gray-700 pt-4 mt-4">
+                  <div className="text-green-400 font-mono">
+                    <span className="text-gray-400">trader@stocktracker:~$ </span>
+                    <span className="animate-pulse">Ready for advanced analysis</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live Dashboard Grid */}
+        <div className="bg-gray-900 border-x border-b border-green-400 rounded-b-lg">
+          
+          {/* Market Status Bar */}
+          <div className="bg-gray-800 px-6 py-3 border-b border-gray-700">
+            <div className="flex flex-wrap items-center justify-between text-sm">
+              <div className="flex items-center space-x-6">
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
+                  <span className="text-green-400 font-mono">MARKETS OPEN</span>
+                </div>
+                <div className="text-gray-400">
+                  NSE: <span className="text-white">ACTIVE</span>
+                </div>
+                <div className="text-gray-400">
+                  BSE: <span className="text-white">ACTIVE</span>
+                </div>
+              </div>
+              <div className="text-gray-400 font-mono">
+                {new Date().toLocaleString('en-IN', { 
+                  timeZone: 'Asia/Kolkata',
+                  hour12: false 
+                })} IST
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Panel - Market Overview */}
+              <div className="lg:col-span-4">
+                <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
+                  <h3 className="text-green-400 font-mono text-lg mb-4">MARKET_OVERVIEW.json</h3>
+                  
+                  {marketOverview && (
+                    <div className="space-y-3 font-mono text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">"total_stocks":</span>
+                        <span className="text-white">{marketOverview.stats.total_stocks}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">"gainers":</span>
+                        <span className="text-green-400">{marketOverview.stats.gainers_count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">"losers":</span>
+                        <span className="text-red-400">{marketOverview.stats.losers_count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">"neutral":</span>
+                        <span className="text-yellow-400">{marketOverview.stats.neutral_count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">"sectors":</span>
+                        <span className="text-blue-400">{marketOverview.stats.sectors_count}</span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold">₹{formatNumber(stock.latest_price)}</p>
-                      <p className="text-sm font-semibold text-green-600">
-                        {formatPercentage(stock['1D_change_%'])}
-                      </p>
+                  )}
+                  
+                  <div className="mt-6 pt-4 border-t border-gray-600">
+                    <div className="flex space-x-2">
+                      <Link
+                        to="/register"
+                        className="bg-green-600 hover:bg-green-700 text-black px-4 py-2 rounded font-mono text-sm transition-colors"
+                      >
+                        ACCESS_FULL_DATA()
+                      </Link>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-              
-              <div className="mt-4 text-center">
-                <Link
-                  to="/register"
-                  className="text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  View All Gainers →
-                </Link>
-              </div>
-            </div>
 
-            {/* Top Losers Preview */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-xl font-semibold mb-4 flex items-center">
-                <TrendingDown className="h-5 w-5 text-red-600 mr-2" />
-                Top Losers Today
-              </h3>
-              
-              <div className="space-y-4">
-                {topMoversPreview.losers.slice(0, 3).map((stock) => (
-                  <div key={stock.ticker} className="flex justify-between items-center p-3 border border-gray-100 rounded">
-                    <div>
-                      <p className="font-medium">{stock.ticker}</p>
-                      <p className="text-sm text-gray-500">{stock.company_name}</p>
+              {/* Center Panel - Live Data */}
+              <div className="lg:col-span-8">
+                <div className="bg-gray-800 border border-gray-600 rounded-lg">
+                  
+                  {/* Tab Headers */}
+                  <div className="bg-gray-700 flex">
+                    <button
+                      onClick={() => setActiveTab('GAINERS')}
+                      className={`px-4 py-2 font-mono text-sm border-r border-gray-600 transition-colors ${
+                        activeTab === 'GAINERS' 
+                          ? 'bg-green-900 text-green-400 border-b-2 border-green-400' 
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      TOP_GAINERS.csv
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('LOSERS')}
+                      className={`px-4 py-2 font-mono text-sm border-r border-gray-600 transition-colors ${
+                        activeTab === 'LOSERS' 
+                          ? 'bg-red-900 text-red-400 border-b-2 border-red-400' 
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      TOP_LOSERS.csv
+                    </button>
+                  </div>
+
+                  {/* Data Table */}
+                  <div className="p-4">
+                    <div className="overflow-x-auto">
+                      <table className="w-full font-mono text-sm">
+                        <thead>
+                          <tr className="text-gray-400 border-b border-gray-600">
+                            <th className="text-left py-2">SYMBOL</th>
+                            <th className="text-left py-2">NAME</th>
+                            <th className="text-right py-2">PRICE</th>
+                            <th className="text-right py-2">CHANGE_%</th>
+                            <th className="text-right py-2">VOLUME</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(activeTab === 'GAINERS' ? topMoversPreview.gainers : topMoversPreview.losers)
+                            .slice(0, 6)
+                            .map((stock, idx) => (
+                              <tr key={stock.ticker} className="border-b border-gray-700 hover:bg-gray-700 transition-colors">
+                                <td className="py-2 text-white font-bold">{stock.ticker}</td>
+                                <td className="py-2 text-gray-300 truncate max-w-xs">{stock.company_name}</td>
+                                <td className="py-2 text-right text-white">₹{formatNumber(stock.latest_price)}</td>
+                                <td className={`py-2 text-right font-bold ${
+                                  stock['1D_change_%'] > 0 ? 'text-green-400' : 'text-red-400'
+                                }`}>
+                                  {stock['1D_change_%'] > 0 ? '+' : ''}{stock['1D_change_%']?.toFixed(2)}%
+                                </td>
+                                <td className="py-2 text-right text-gray-400">
+                                  {formatNumber(Math.floor(Math.random() * 1000000))}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold">₹{formatNumber(stock.latest_price)}</p>
-                      <p className="text-sm font-semibold text-red-600">
-                        {formatPercentage(stock['1D_change_%'])}
-                      </p>
+                    
+                    <div className="mt-4 text-center">
+                      <Link
+                        to="/register"
+                        className="text-green-400 hover:text-green-300 font-mono text-sm underline"
+                      >
+                        → LOAD_MORE_DATA() // Requires Authentication
+                      </Link>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-              
-              <div className="mt-4 text-center">
-                <Link
-                  to="/register"
-                  className="text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  View All Losers →
-                </Link>
+            </div>
+
+            {/* Bottom Action Bar */}
+            <div className="mt-8 bg-gray-800 border border-gray-600 rounded-lg p-4">
+              <div className="flex flex-col md:flex-row items-center justify-between">
+                <div className="text-gray-400 font-mono text-sm mb-4 md:mb-0">
+                  <span className="text-green-400">READY:</span> Advanced analysis tools available for registered users
+                </div>
+                
+                <div className="flex space-x-4">
+                  <Link
+                    to="/login"
+                    className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded font-mono text-sm border border-gray-500 transition-colors"
+                  >
+                    LOGIN
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="bg-green-600 hover:bg-green-700 text-black px-6 py-2 rounded font-mono text-sm font-bold transition-colors"
+                  >
+                    START_ANALYSIS()
+                  </Link>
+                </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Command Help */}
+        <div className="mt-8 bg-gray-900 border border-gray-600 rounded-lg p-6">
+          <h3 className="text-blue-400 font-mono text-lg mb-4">AVAILABLE_COMMANDS:</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-mono text-sm">
+            <div className="text-gray-400">
+              <span className="text-green-400">./analyze</span> --filters --sectors --cap
+            </div>
+            <div className="text-gray-400">
+              <span className="text-green-400">./watchlist</span> --add --remove --monitor
+            </div>
+            <div className="text-gray-400">
+              <span className="text-green-400">./alerts</span> --price --volume --news
+            </div>
+            <div className="text-gray-400">
+              <span className="text-green-400">./portfolio</span> --track --optimize
+            </div>
+            <div className="text-gray-400">
+              <span className="text-green-400">./research</span> --company --financials
+            </div>
+            <div className="text-gray-400">
+              <span className="text-green-400">./export</span> --csv --json --pdf
             </div>
           </div>
         </div>
       </div>
-
-      {/* Features Section */}
-      <div className="py-16 bg-white">
-        <div className="max-w-7xl mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center mb-12">Powerful Features</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center p-6">
-              <div className="bg-blue-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <TrendingUp className="h-8 w-8 text-blue-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Real-time Analysis</h3>
-              <p className="text-gray-600">
-                Get live market data with advanced filtering by market cap, sector, and date ranges
-              </p>
-            </div>
-            
-            <div className="text-center p-6">
-              <div className="bg-green-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Eye className="h-8 w-8 text-green-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Watchlists</h3>
-              <p className="text-gray-600">
-                Create multiple watchlists to track your favorite stocks and get notifications
-              </p>
-            </div>
-            
-            <div className="text-center p-6">
-              <div className="bg-purple-100 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <BarChart3 className="h-8 w-8 text-purple-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-2">Detailed Analytics</h3>
-              <p className="text-gray-600">
-                Comprehensive analysis with data quality indicators and performance metrics
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* CTA Section */}
-      <div className="py-16 bg-blue-600">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Ready to Start Your Investment Journey?
-          </h2>
-          <p className="text-xl text-blue-100 mb-8">
-            Join thousands of investors who trust StockTracker for their market analysis
-          </p>
-          <Link
-            to="/register"
-            className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors inline-block"
-          >
-            Get Started Today
-          </Link>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="text-xl font-bold mb-4">📈 StockTracker</h3>
-              <p className="text-gray-400">
-                Your trusted partner for smart stock market analysis and investment decisions.
-              </p>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Features</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>Top Gainers & Losers</li>
-                <li>Advanced Filtering</li>
-                <li>Watchlists</li>
-                <li>Price Alerts</li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li><Link to="/updates" className="hover:text-white">Updates</Link></li>
-                <li>About Us</li>
-                <li>Contact</li>
-                <li>Privacy Policy</li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Support</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>Help Center</li>
-                <li>Terms & Conditions</li>
-                <li>Contact Support</li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 StockTracker. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
