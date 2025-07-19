@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -10,6 +11,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timedelta
 import random
+import jwt
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -24,6 +26,30 @@ app = FastAPI()
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# JWT settings
+JWT_SECRET = "your-secret-key-here"  # In production, use environment variable
+JWT_ALGORITHM = "HS256"
+
+# Auth setup
+security = HTTPBearer(auto_error=False)
+
+# Auth Models
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    email: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    subscription_plan: str = "basic"
 
 # Stock Models
 class StockAnalysisRequest(BaseModel):
@@ -67,6 +93,34 @@ sample_stocks_data = [
     {"ticker": "POWERGRID", "company_name": "Power Grid Corporation", "market_cap": 189234.56, "sector": "Power", "latest_price": 213.45},
 ]
 
+# Simple user storage (in production, use proper database)
+users_db = {}
+
+def create_jwt_token(user_email: str):
+    payload = {
+        "email": user_email,
+        "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_jwt_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload.get("email")
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials:
+        return None
+    
+    email = verify_jwt_token(credentials.credentials)
+    if email and email in users_db:
+        return users_db[email]
+    return None
+
 def generate_price_changes():
     """Generate random price changes for different periods"""
     changes = {}
@@ -84,9 +138,139 @@ def add_stock_analysis_data(stock):
     stock["total_days"] = 30
     return stock
 
+# Auth endpoints
+@api_router.post("/auth/register")
+async def register_user(request: RegisterRequest):
+    """Register a new user"""
+    try:
+        if request.email in users_db:
+            raise HTTPException(status_code=400, detail="User already exists")
+        
+        user = User(
+            name=request.name,
+            email=request.email
+        )
+        
+        users_db[request.email] = user.dict()
+        users_db[request.email]["password"] = request.password  # In production, hash the password
+        
+        token = create_jwt_token(request.email)
+        
+        return {
+            "success": True,
+            "message": "User registered successfully",
+            "token": token,
+            "user": {
+                "name": user.name,
+                "email": user.email,
+                "subscription_plan": user.subscription_plan
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/auth/login")
+async def login_user(request: LoginRequest):
+    """Login user"""
+    try:
+        if request.email not in users_db:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        user_data = users_db[request.email]
+        if user_data["password"] != request.password:  # In production, verify hashed password
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        token = create_jwt_token(request.email)
+        
+        return {
+            "success": True,
+            "message": "Login successful",
+            "token": token,
+            "user": {
+                "name": user_data["name"],
+                "email": user_data["email"],
+                "subscription_plan": user_data.get("subscription_plan", "basic")
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/auth/me")
+async def get_current_user_info(user = Depends(get_current_user)):
+    """Get current user information"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    return {
+        "success": True,
+        "user": {
+            "name": user["name"],
+            "email": user["email"],
+            "subscription_plan": user.get("subscription_plan", "basic")
+        }
+    }
+
+# Public endpoints for home page preview
+@api_router.get("/public/top-movers-preview")
+async def get_top_movers_preview(limit: int = Query(3, description="Number of stocks to return")):
+    """Get top movers preview for homepage (limited data)"""
+    try:
+        # Add analysis data to stocks
+        analyzed_stocks = [add_stock_analysis_data(stock.copy()) for stock in sample_stocks_data]
+        
+        # Get top 3 gainers and losers for preview
+        gainers = [stock for stock in analyzed_stocks if stock.get("1D_change_%", 0) > 0]
+        gainers.sort(key=lambda x: x.get("1D_change_%", 0), reverse=True)
+        gainers = gainers[:limit]
+        
+        losers = [stock for stock in analyzed_stocks if stock.get("1D_change_%", 0) < 0]
+        losers.sort(key=lambda x: x.get("1D_change_%", 0))
+        losers = losers[:limit]
+        
+        return {
+            "success": True,
+            "gainers": gainers,
+            "losers": losers
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/public/market-overview")
+async def get_market_overview():
+    """Get market overview stats for homepage"""
+    try:
+        analyzed_stocks = [add_stock_analysis_data(stock.copy()) for stock in sample_stocks_data]
+        
+        total_stocks = len(analyzed_stocks)
+        gainers_count = len([s for s in analyzed_stocks if s.get("1D_change_%", 0) > 0])
+        losers_count = len([s for s in analyzed_stocks if s.get("1D_change_%", 0) < 0])
+        
+        sectors = list(set([stock["sector"] for stock in analyzed_stocks]))
+        
+        return {
+            "success": True,
+            "stats": {
+                "total_stocks": total_stocks,
+                "gainers_count": gainers_count,
+                "losers_count": losers_count,
+                "neutral_count": total_stocks - gainers_count - losers_count,
+                "sectors_count": len(sectors),
+                "avg_market_cap": sum([s["market_cap"] for s in analyzed_stocks]) / total_stocks
+            },
+            "sectors": sectors[:8]  # Show first 8 sectors
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Protected endpoints (require authentication)
 @api_router.get("/data/availability")
-async def get_data_availability():
-    """Get data availability information"""
+async def get_data_availability(user = Depends(get_current_user)):
+    """Get data availability information (protected)"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
     
@@ -99,15 +283,24 @@ async def get_data_availability():
     }
 
 @api_router.get("/stocks/sectors")
-async def get_sectors():
-    """Get all available sectors"""
+async def get_sectors(user = Depends(get_current_user)):
+    """Get all available sectors (protected)"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     sectors = list(set([stock["sector"] for stock in sample_stocks_data]))
     return {"success": True, "sectors": sorted(sectors)}
 
 @api_router.get("/stocks/top-movers")
-async def get_top_movers(period: int = Query(1, description="Period in days"), 
-                        limit: int = Query(10, description="Number of stocks to return")):
-    """Get top gainers and losers"""
+async def get_top_movers(
+    period: int = Query(1, description="Period in days"), 
+    limit: int = Query(10, description="Number of stocks to return"),
+    user = Depends(get_current_user)
+):
+    """Get top gainers and losers (protected)"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     try:
         # Add analysis data to stocks
         analyzed_stocks = [add_stock_analysis_data(stock.copy()) for stock in sample_stocks_data]
@@ -134,8 +327,11 @@ async def get_top_movers(period: int = Query(1, description="Period in days"),
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/stocks/analysis")
-async def get_stock_analysis(request: StockAnalysisRequest):
-    """Get stock analysis with filtering and sorting"""
+async def get_stock_analysis(request: StockAnalysisRequest, user = Depends(get_current_user)):
+    """Get stock analysis with filtering and sorting (protected)"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     try:
         # Add analysis data to stocks
         analyzed_stocks = [add_stock_analysis_data(stock.copy()) for stock in sample_stocks_data]
@@ -179,8 +375,11 @@ async def get_stock_analysis(request: StockAnalysisRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/stocks/{ticker}")
-async def get_stock_details(ticker: str):
-    """Get detailed information for a specific stock"""
+async def get_stock_details(ticker: str, user = Depends(get_current_user)):
+    """Get detailed information for a specific stock (protected)"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     try:
         # Find stock in sample data
         stock_data = next((stock for stock in sample_stocks_data if stock["ticker"] == ticker), None)
