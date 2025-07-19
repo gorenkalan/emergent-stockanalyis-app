@@ -5,39 +5,11 @@ import './App.css';
 
 const API_BASE_URL = process.env.REACT_APP_BACKEND_URL + '/api';
 
-// Type definitions remain the same as in the original code
-interface Stock {
-  ticker: string;
-  company_name: string;
-  market_cap: number;
-  sector: string;
-  latest_price: number;
-  latest_price_date: string;
-  'data_completeness_%': number;
-  days_with_price: number;
-  total_days: number;
-  [key: string]: any; 
-}
-
-interface TopMovers { 
-  gainers: Stock[]; 
-  losers: Stock[]; 
-}
-
-interface DataAvailability { 
-  success: boolean; 
-  start_date: string; 
-  end_date: string; 
-  total_days: number; 
-  last_updated: string; 
-}
-
-interface DataQualitySummary { 
-  total_stocks: number; 
-  stocks_with_full_data: number; 
-  stocks_with_partial_data: number; 
-  avg_data_completeness: number; 
-}
+// Data structure comments for reference:
+// Stock: { ticker, company_name, market_cap, sector, latest_price, latest_price_date, 'data_completeness_%', days_with_price, total_days, ... }
+// TopMovers: { gainers: Stock[], losers: Stock[] }
+// DataAvailability: { success, start_date, end_date, total_days, last_updated }
+// DataQualitySummary: { total_stocks, stocks_with_full_data, stocks_with_partial_data, avg_data_completeness }
 
 // Navigation Component
 const Navigation = ({ onSearch }) => {
