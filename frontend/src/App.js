@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useParams, useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, RefreshCw, Calendar, AlertCircle, ArrowLeft, ArrowRight, Search, Menu, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Calendar, AlertCircle, ArrowLeft, ArrowRight, Search, Menu, X, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
 import './App.css';
 
 const API_BASE_URL = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -11,18 +11,17 @@ const API_BASE_URL = process.env.REACT_APP_BACKEND_URL + '/api';
 // DataAvailability: { success, start_date, end_date, total_days, last_updated }
 // DataQualitySummary: { total_stocks, stocks_with_full_data, stocks_with_partial_data, avg_data_completeness }
 
-// Navigation Component
-const Navigation = ({ onSearch }) => {
+// Header Component (No search on homepage)
+const Header = ({ showSearch = false, onSearch, searchQuery, setSearchQuery }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    onSearch(searchQuery);
+    onSearch && onSearch(searchQuery);
   };
 
   return (
-    <nav className="bg-white shadow-md sticky top-0 z-50">
+    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -38,19 +37,21 @@ const Navigation = ({ onSearch }) => {
             <Link to="/updates" className="text-gray-700 hover:text-blue-600">Updates</Link>
           </div>
 
-          {/* Search Bar */}
-          <form onSubmit={handleSearchSubmit} className="hidden md:flex items-center">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search stocks..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            </div>
-          </form>
+          {/* Search Bar - Only show on stock detail pages */}
+          {showSearch && (
+            <form onSubmit={handleSearchSubmit} className="hidden md:flex items-center">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search stocks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              </div>
+            </form>
+          )}
 
           {/* Mobile menu button */}
           <button
@@ -69,18 +70,20 @@ const Navigation = ({ onSearch }) => {
               <Link to="/watchlist" className="text-gray-700 hover:text-blue-600">Watchlist</Link>
               <Link to="/notes" className="text-gray-700 hover:text-blue-600">Notes</Link>
               <Link to="/updates" className="text-gray-700 hover:text-blue-600">Updates</Link>
-              <form onSubmit={handleSearchSubmit} className="flex items-center">
-                <div className="relative w-full">
-                  <input
-                    type="text"
-                    placeholder="Search stocks..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                </div>
-              </form>
+              {showSearch && (
+                <form onSubmit={handleSearchSubmit} className="flex items-center">
+                  <div className="relative w-full">
+                    <input
+                      type="text"
+                      placeholder="Search stocks..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         )}
@@ -89,117 +92,351 @@ const Navigation = ({ onSearch }) => {
   );
 };
 
-// Stock Card Component with Pagination
-const StockCard = ({ title, stocks, icon: Icon, type = 'default', onStockClick, itemsPerPage = 10 }) => {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [displayCount, setDisplayCount] = useState(itemsPerPage);
+// Filter Bar Component for individual cards
+const FilterBar = ({ 
+  showAnalysisFilters = false, 
+  selectedSector, 
+  setSelectedSector, 
+  sectors, 
+  marketCapRange, 
+  setMarketCapRange,
+  dateRange,
+  setDateRange,
+  dataAvailability,
+  changePeriods,
+  setChangePeriods,
+  sortBy,
+  setSortBy,
+  sortOrder,
+  setSortOrder,
+  onRefresh,
+  loading
+}) => {
+  const sortOptions = [ 
+    { value: 'market_cap', label: 'Market Cap' }, 
+    { value: 'company_name', label: 'Company Name' }, 
+    { value: 'sector', label: 'Sector' }, 
+    { value: 'latest_price', label: 'Latest Price' }, 
+    ...(changePeriods ? changePeriods.map(p => ({ value: `${p}D_change_%`, label: `${p}D Change %` })) : [])
+  ];
 
-  const totalPages = Math.ceil(stocks.length / displayCount);
-  const startIndex = (currentPage - 1) * displayCount;
-  const displayedStocks = stocks.slice(startIndex, startIndex + displayCount);
+  if (!showAnalysisFilters) {
+    // Simple filters for Top Gainers/Losers cards
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">Market Cap</label>
+            <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>All</option>
+              <option>Large Cap</option>
+              <option>Mid Cap</option>
+              <option>Small Cap</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">Sector</label>
+            <select 
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={selectedSector}
+              onChange={(e) => setSelectedSector && setSelectedSector(e.target.value)}
+            >
+              <option value="">All Sectors</option>
+              {sectors && sectors.map(sector => (
+                <option key={sector} value={sector}>{sector}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">Period</label>
+            <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>Today</option>
+              <option>1 Week</option>
+              <option>1 Month</option>
+              <option>3 Months</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
-
-  const handleDisplayCountChange = (count) => {
-    setDisplayCount(count);
-    setCurrentPage(1);
-  };
-
+  // Full analysis filters for the analysis card
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h3 className="font-semibold text-lg flex items-center gap-2 mb-4">
-        <Icon className={`h-5 w-5 ${type === 'gainers' ? 'text-green-600' : type === 'losers' ? 'text-red-600' : 'text-blue-600'}`} />
-        {title}
-      </h3>
-
-      {/* Display count selector */}
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-2 text-sm">
-          <span>Show:</span>
+    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+      <h3 className="font-semibold text-lg text-gray-900">Analysis Filters</h3>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-700">Date Range</label>
+          <div className="flex gap-2">
+            <input 
+              type="date" 
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              value={dateRange?.start} 
+              min={dataAvailability?.start_date} 
+              max={dataAvailability?.end_date} 
+              onChange={(e) => setDateRange && setDateRange({ ...dateRange, start: e.target.value })}
+            />
+            <input 
+              type="date" 
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              value={dateRange?.end} 
+              min={dataAvailability?.start_date} 
+              max={dataAvailability?.end_date} 
+              onChange={(e) => setDateRange && setDateRange({ ...dateRange, end: e.target.value })}
+            />
+          </div>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-700">Market Cap (Crores)</label>
+          <div className="flex gap-2">
+            <input 
+              type="number" 
+              placeholder="Min" 
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              value={marketCapRange?.min} 
+              onChange={(e) => setMarketCapRange && setMarketCapRange({ ...marketCapRange, min: e.target.value })}
+            />
+            <input 
+              type="number" 
+              placeholder="Max" 
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              value={marketCapRange?.max} 
+              onChange={(e) => setMarketCapRange && setMarketCapRange({ ...marketCapRange, max: e.target.value })}
+            />
+          </div>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-700">Sector</label>
           <select 
-            value={displayCount} 
-            onChange={(e) => handleDisplayCountChange(Number(e.target.value))}
-            className="border rounded px-2 py-1"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+            value={selectedSector} 
+            onChange={(e) => setSelectedSector(e.target.value)}
+          >
+            <option value="">All Sectors</option>
+            {sectors && sectors.map(sector => (
+              <option key={sector} value={sector}>{sector}</option>
+            ))}
+          </select>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-700">Sort By</label>
+          <select 
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value)}
+          >
+            {sortOptions.map(opt => 
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            )}
+          </select>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-700">Order</label>
+          <select 
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+            value={sortOrder} 
+            onChange={(e) => setSortOrder(e.target.value)}
+          >
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
+        </div>
+        
+        <div className="flex items-end">
+          <button 
+            onClick={onRefresh} 
+            disabled={loading} 
+            className="px-4 py-2 w-full bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <RefreshCw className="h-4 w-4 animate-spin" />} 
+            Refresh
+          </button>
+        </div>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Price Change Periods (Days)</label>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {[1, 5, 10, 15, 20, 30].map(period => (
+            <label key={period} className="flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                className="mr-1 h-4 w-4" 
+                checked={changePeriods && changePeriods.includes(period)} 
+                onChange={(e) => { 
+                  if (!changePeriods || !setChangePeriods) return;
+                  const newPeriods = e.target.checked 
+                    ? [...changePeriods, period] 
+                    : changePeriods.filter(p => p !== period); 
+                  setChangePeriods(newPeriods.sort((a, b) => a - b)); 
+                }}
+              />
+              {period}D
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Dashboard Card Component with internal scrolling
+const DashboardCard = ({ 
+  title, 
+  icon, 
+  children, 
+  currentPage = 1, 
+  totalPages = 1, 
+  itemsPerPage = 10, 
+  totalItems = 0, 
+  onPageChange, 
+  onItemsPerPageChange 
+}) => {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+      {/* Card Header */}
+      <div className="flex flex-row items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center space-x-2">
+          {icon}
+          <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+        </div>
+        
+        {/* Items per page selector */}
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-500 hidden sm:inline">Show:</span>
+          <select 
+            value={itemsPerPage} 
+            onChange={(e) => onItemsPerPageChange && onItemsPerPageChange(Number(e.target.value))}
+            className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value={10}>10</option>
             <option value={20}>20</option>
             <option value={50}>50</option>
           </select>
         </div>
-        <span className="text-sm text-gray-500">
-          {stocks.length} total stocks
-        </span>
       </div>
-
-      {/* Stock List */}
-      <div className="space-y-4 min-h-[400px]">
-        {displayedStocks.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No data available</p>
-        ) : (
-          displayedStocks.map((stock) => (
-            <div 
-              key={stock.ticker} 
-              className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-              onClick={() => onStockClick && onStockClick(stock.ticker)}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{stock.ticker}</p>
-                <p className="text-xs text-gray-500 truncate" title={stock.company_name}>
-                  {stock.company_name}
-                </p>
-                <p className="text-xs text-gray-400">{stock.sector}</p>
-              </div>
-              <div className="text-right ml-4">
-                <p className="font-medium text-sm">₹{formatNumber(stock.latest_price)}</p>
-                <p className="text-sm font-semibold">
-                  {formatPercentage(stock['1D_change_%'])}
-                </p>
-                <p className="text-xs text-gray-400">
-                  ₹{formatNumber(stock.market_cap / 100)} Cr
-                </p>
-              </div>
+      
+      {/* Card Content with Fixed Height and Scrolling */}
+      <div className="p-6">
+        <div className="min-h-[500px] max-h-[600px] overflow-y-auto">
+          {children}
+        </div>
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t pt-4 mt-4">
+            <div className="text-sm text-gray-500">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to{" "}
+              {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} results
             </div>
-          ))
+            
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => onPageChange && onPageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 flex items-center"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline ml-1">Previous</span>
+              </button>
+              
+              <div className="flex items-center space-x-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => onPageChange && onPageChange(pageNum)}
+                      className={`w-8 h-8 text-sm rounded ${
+                        pageNum === currentPage 
+                          ? 'bg-blue-600 text-white' 
+                          : 'border border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <button
+                onClick={() => onPageChange && onPageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 flex items-center"
+              >
+                <span className="hidden sm:inline mr-1">Next</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center items-center mt-6 space-x-2">
-          <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            className="p-2 rounded-lg border disabled:opacity-50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          
-          <span className="px-4 py-2 text-sm">
-            Page {currentPage} of {totalPages}
-          </span>
-          
-          <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            className="p-2 rounded-lg border disabled:opacity-50"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };
 
-// Individual Stock Page Component
+// Stock Card Component
+const StockCard = ({ stock, type = 'default', onStockClick }) => {
+  const getChangeColor = (change) => {
+    if (change > 0) return 'text-green-600';
+    if (change < 0) return 'text-red-600';
+    return 'text-gray-600';
+  };
+
+  return (
+    <div 
+      className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+      onClick={() => onStockClick && onStockClick(stock.ticker)}
+    >
+      <div className="flex justify-between items-center">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center space-x-2">
+            <p className="font-semibold text-gray-900">{stock.ticker}</p>
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              {stock.sector}
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 truncate mt-1" title={stock.company_name}>
+            {stock.company_name}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            ₹{formatNumber(stock.market_cap / 100)} Cr
+          </p>
+        </div>
+        
+        <div className="text-right ml-4">
+          <p className="font-semibold text-gray-900">₹{formatNumber(stock.latest_price)}</p>
+          <p className={`text-sm font-semibold ${getChangeColor(stock['1D_change_%'])}`}>
+            {formatPercentage(stock['1D_change_%'])}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Individual Stock Page Component with Search
 const StockDetail = () => {
   const { ticker } = useParams();
   const navigate = useNavigate();
   const [stockData, setStockData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+
+  const handleSearch = async (query) => {
+    if (query.trim()) {
+      // Navigate to search result or show "not found"
+      navigate(`/stock/${query.toUpperCase()}`);
+    }
+  };
 
   useEffect(() => {
     const fetchStockDetail = async () => {
@@ -221,12 +458,29 @@ const StockDetail = () => {
     fetchStockDetail();
   }, [ticker]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50">
+      <Header showSearch={true} onSearch={handleSearch} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Loading...</span>
+      </div>
+    </div>
+  );
+  
+  if (error) return (
+    <div className="min-h-screen bg-gray-50">
+      <Header showSearch={true} onSearch={handleSearch} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+      <div className="flex items-center justify-center h-64 text-red-600">{error}</div>
+    </div>
+  );
+  
   if (!stockData) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <Header showSearch={true} onSearch={handleSearch} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+      
       <div className="max-w-6xl mx-auto p-4">
         {/* Header */}
         <div className="mb-6">
@@ -238,7 +492,7 @@ const StockDetail = () => {
             Back to Dashboard
           </button>
           
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between">
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">{stockData.ticker}</h1>
@@ -255,7 +509,7 @@ const StockDetail = () => {
 
         {/* Key Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="font-semibold mb-4">Market Information</h3>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -275,7 +529,7 @@ const StockDetail = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="font-semibold mb-4">Company Info</h3>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -293,7 +547,7 @@ const StockDetail = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="font-semibold mb-4">Financial Info</h3>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -309,7 +563,7 @@ const StockDetail = () => {
         </div>
 
         {/* Price Changes */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <h3 className="font-semibold mb-4">Price Performance</h3>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
             {[1, 5, 10, 15, 20, 30].map(period => (
@@ -322,7 +576,7 @@ const StockDetail = () => {
         </div>
 
         {/* Company Description */}
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="font-semibold mb-4">About Company</h3>
           <p className="text-gray-700 mb-4">{stockData.description}</p>
           
@@ -361,6 +615,7 @@ const StockAnalysisDashboard = () => {
   const [dataAvailability, setDataAvailability] = useState(null);
   const [dataQuality, setDataQuality] = useState(null);
   
+  // Filter states
   const [selectedSector, setSelectedSector] = useState('');
   const [marketCapRange, setMarketCapRange] = useState({ min: '', max: '' });
   const [changePeriods, setChangePeriods] = useState([1, 5, 10, 15, 20, 30]);
@@ -368,21 +623,16 @@ const StockAnalysisDashboard = () => {
   const [sortBy, setSortBy] = useState('market_cap');
   const [sortOrder, setSortOrder] = useState('desc');
 
+  // Pagination states for each card
+  const [gainersPage, setGainersPage] = useState(1);
+  const [losersPage, setLosersPage] = useState(1);
+  const [analysisPage, setAnalysisPage] = useState(1);
+  const [gainersPerPage, setGainersPerPage] = useState(10);
+  const [losersPerPage, setLosersPerPage] = useState(10);
+  const [analysisPerPage, setAnalysisPerPage] = useState(20);
+
   const handleStockClick = (ticker) => {
     navigate(`/stock/${ticker}`);
-  };
-
-  const handleSearch = (query) => {
-    if (query.trim()) {
-      const found = [...topMovers.gainers, ...topMovers.losers, ...stockData]
-        .find(stock => stock.ticker.toLowerCase().includes(query.toLowerCase()) || 
-                     stock.company_name.toLowerCase().includes(query.toLowerCase()));
-      if (found) {
-        navigate(`/stock/${found.ticker}`);
-      } else {
-        alert('Stock not found');
-      }
-    }
   };
 
   const fetchStockAnalysis = useCallback(async () => {
@@ -437,7 +687,7 @@ const StockAnalysisDashboard = () => {
 
   const fetchTopMovers = async (period = 1) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/stocks/top-movers?period=${period}&limit=10`);
+      const response = await fetch(`${API_BASE_URL}/stocks/top-movers?period=${period}&limit=20`);
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const data = await response.json();
       if (data.success) {
@@ -472,23 +722,11 @@ const StockAnalysisDashboard = () => {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
-  
-  const reloadData = async () => { 
-    await loadInitialData(); 
-  };
-
-  const sortOptions = [ 
-    { value: 'market_cap', label: 'Market Cap' }, 
-    { value: 'company_name', label: 'Company Name' }, 
-    { value: 'sector', label: 'Sector' }, 
-    { value: 'latest_price', label: 'Latest Price' }, 
-    ...changePeriods.map(p => ({ value: `${p}D_change_%`, label: `${p}D Change %` })) 
-  ];
 
   if (loading && !dataAvailability) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navigation onSearch={handleSearch} />
+        <Header showSearch={false} />
         <div className="flex items-center justify-center h-64">
           <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2 text-gray-600">Loading dashboard...</span>
@@ -497,18 +735,29 @@ const StockAnalysisDashboard = () => {
     );
   }
 
+  // Calculate pagination for each card
+  const gainersTotal = Math.ceil(topMovers.gainers.length / gainersPerPage);
+  const losersTotal = Math.ceil(topMovers.losers.length / losersPerPage);
+  const analysisTotal = Math.ceil(stockData.length / analysisPerPage);
+
+  const displayedGainers = topMovers.gainers.slice((gainersPage - 1) * gainersPerPage, gainersPage * gainersPerPage);
+  const displayedLosers = topMovers.losers.slice((losersPage - 1) * losersPerPage, losersPage * losersPerPage);
+  const displayedAnalysis = stockData.slice((analysisPage - 1) * analysisPerPage, analysisPage * analysisPerPage);
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navigation onSearch={handleSearch} />
+      <Header showSearch={false} />
       
       <div className="max-w-7xl mx-auto p-4">
+        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Stock Market Analysis Dashboard</h1>
           <p className="text-gray-600">Analysis based on pre-loaded NSE/BSE stock data</p>
         </div>
 
+        {/* Data Availability Info */}
         {dataAvailability && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-start gap-3">
               <Calendar className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
@@ -520,191 +769,158 @@ const StockAnalysisDashboard = () => {
                   Last updated: {formatDate(dataAvailability.last_updated)}
                 </p>
               </div>
-              <button 
-                onClick={reloadData} 
-                disabled={loading} 
-                className="p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
             </div>
           </div>
         )}
-        
-        {/* Top Movers Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <StockCard
-            title="Top Gainers (1 Day)"
-            stocks={topMovers.gainers}
-            icon={TrendingUp}
-            type="gainers"
-            onStockClick={handleStockClick}
-          />
-          <StockCard
-            title="Top Losers (1 Day)"
-            stocks={topMovers.losers}
-            icon={TrendingDown}
-            type="losers"
-            onStockClick={handleStockClick}
-          />
-        </div>
 
-        {/* Analysis Filters */}
-        <div className="mb-8 bg-white p-6 rounded-lg shadow-md">
-          <h3 className="font-semibold text-lg mb-4">Analysis Filters</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Date Range</label>
-              <div className="flex gap-2">
-                <input 
-                  type="date" 
-                  className="flex-1 px-3 py-2 border rounded-md" 
-                  value={dateRange.start} 
-                  min={dataAvailability?.start_date} 
-                  max={dataAvailability?.end_date} 
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                />
-                <input 
-                  type="date" 
-                  className="flex-1 px-3 py-2 border rounded-md" 
-                  value={dateRange.end} 
-                  min={dataAvailability?.start_date} 
-                  max={dataAvailability?.end_date} 
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Market Cap (Crores)</label>
-              <div className="flex gap-2">
-                <input 
-                  type="number" 
-                  placeholder="Min" 
-                  className="flex-1 px-3 py-2 border rounded-md" 
-                  value={marketCapRange.min} 
-                  onChange={(e) => setMarketCapRange({ ...marketCapRange, min: e.target.value })}
-                />
-                <input 
-                  type="number" 
-                  placeholder="Max" 
-                  className="flex-1 px-3 py-2 border rounded-md" 
-                  value={marketCapRange.max} 
-                  onChange={(e) => setMarketCapRange({ ...marketCapRange, max: e.target.value })}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Sector</label>
-              <select 
-                className="w-full px-3 py-2 border rounded-md" 
-                value={selectedSector} 
-                onChange={(e) => setSelectedSector(e.target.value)}
+        <div className="space-y-6">
+          {/* Cards 1 & 2 side by side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top Gainers Card */}
+            <div className="space-y-4">
+              <FilterBar 
+                selectedSector={selectedSector}
+                setSelectedSector={setSelectedSector}
+                sectors={sectors}
+              />
+              
+              <DashboardCard
+                title="Top Gainers"
+                icon={<TrendingUp className="h-5 w-5 text-green-600" />}
+                currentPage={gainersPage}
+                totalPages={gainersTotal}
+                itemsPerPage={gainersPerPage}
+                totalItems={topMovers.gainers.length}
+                onPageChange={setGainersPage}
+                onItemsPerPageChange={setGainersPerPage}
               >
-                <option value="">All Sectors</option>
-                {sectors.map(sector => (
-                  <option key={sector} value={sector}>{sector}</option>
-                ))}
-              </select>
+                <div className="space-y-3">
+                  {displayedGainers.map((stock) => (
+                    <StockCard 
+                      key={stock.ticker} 
+                      stock={stock} 
+                      type="gainer" 
+                      onStockClick={handleStockClick}
+                    />
+                  ))}
+                  {displayedGainers.length === 0 && (
+                    <p className="text-gray-500 text-center py-8">No gainers data available</p>
+                  )}
+                </div>
+              </DashboardCard>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Sort By</label>
-              <select 
-                className="w-full px-3 py-2 border rounded-md" 
-                value={sortBy} 
-                onChange={(e) => setSortBy(e.target.value)}
+
+            {/* Top Losers Card */}
+            <div className="space-y-4">
+              <FilterBar 
+                selectedSector={selectedSector}
+                setSelectedSector={setSelectedSector}
+                sectors={sectors}
+              />
+              
+              <DashboardCard
+                title="Top Losers"
+                icon={<TrendingDown className="h-5 w-5 text-red-600" />}
+                currentPage={losersPage}
+                totalPages={losersTotal}
+                itemsPerPage={losersPerPage}
+                totalItems={topMovers.losers.length}
+                onPageChange={setLosersPage}
+                onItemsPerPageChange={setLosersPerPage}
               >
-                {sortOptions.map(opt => 
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Order</label>
-              <select 
-                className="w-full px-3 py-2 border rounded-md" 
-                value={sortOrder} 
-                onChange={(e) => setSortOrder(e.target.value)}
-              >
-                <option value="desc">Descending</option>
-                <option value="asc">Ascending</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button 
-                onClick={fetchStockAnalysis} 
-                disabled={loading || !dataAvailability} 
-                className="px-4 py-2 w-full bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading && <RefreshCw className="h-4 w-4 animate-spin" />} 
-                Refresh
-              </button>
+                <div className="space-y-3">
+                  {displayedLosers.map((stock) => (
+                    <StockCard 
+                      key={stock.ticker} 
+                      stock={stock} 
+                      type="loser" 
+                      onStockClick={handleStockClick}
+                    />
+                  ))}
+                  {displayedLosers.length === 0 && (
+                    <p className="text-gray-500 text-center py-8">No losers data available</p>
+                  )}
+                </div>
+              </DashboardCard>
             </div>
           </div>
-          <hr className="my-4"/>
-          <div>
-            <label className="block text-sm font-medium mb-2">Price Change Periods (Days)</label>
-            <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {[1, 5, 10, 15, 20, 30].map(period => (
-                <label key={period} className="flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="mr-1 h-4 w-4" 
-                    checked={changePeriods.includes(period)} 
-                    onChange={(e) => { 
-                      const newPeriods = e.target.checked 
-                        ? [...changePeriods, period] 
-                        : changePeriods.filter(p => p !== period); 
-                      setChangePeriods(newPeriods.sort((a, b) => a - b)); 
-                    }}
-                  />
-                  {period}D
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-        
-        {/* Data Quality Summary */}
-        {dataQuality && stockData.length > 0 && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-yellow-900">Data Quality Summary</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-sm text-yellow-700">
-                  <div>Total Stocks: {dataQuality.total_stocks}</div>
-                  <div>Complete Data: {dataQuality.stocks_with_full_data}</div>
-                  <div>Partial Data: {dataQuality.stocks_with_partial_data}</div>
-                  <div>Avg Completeness: {dataQuality.avg_data_completeness?.toFixed(1)}%</div>
+
+          {/* Card 3 - Analysis Results */}
+          <div className="space-y-4">
+            <FilterBar 
+              showAnalysisFilters={true}
+              selectedSector={selectedSector}
+              setSelectedSector={setSelectedSector}
+              sectors={sectors}
+              marketCapRange={marketCapRange}
+              setMarketCapRange={setMarketCapRange}
+              dateRange={dateRange}
+              setDateRange={setDateRange}
+              dataAvailability={dataAvailability}
+              changePeriods={changePeriods}
+              setChangePeriods={setChangePeriods}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              sortOrder={sortOrder}
+              setSortOrder={setSortOrder}
+              onRefresh={fetchStockAnalysis}
+              loading={loading}
+            />
+
+            {/* Data Quality Summary */}
+            {dataQuality && stockData.length > 0 && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-yellow-900">Data Quality Summary</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-sm text-yellow-700">
+                      <div>Total Stocks: {dataQuality.total_stocks}</div>
+                      <div>Complete Data: {dataQuality.stocks_with_full_data}</div>
+                      <div>Partial Data: {dataQuality.stocks_with_partial_data}</div>
+                      <div>Avg Completeness: {dataQuality.avg_data_completeness?.toFixed(1)}%</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            <DashboardCard
+              title={`Analysis Results (${stockData.length} stocks)`}
+              icon={<BarChart3 className="h-5 w-5 text-blue-600" />}
+              currentPage={analysisPage}
+              totalPages={analysisTotal}
+              itemsPerPage={analysisPerPage}
+              totalItems={stockData.length}
+              onPageChange={setAnalysisPage}
+              onItemsPerPageChange={setAnalysisPerPage}
+            >
+              <div className="space-y-3">
+                {displayedAnalysis.map((stock) => (
+                  <StockCard 
+                    key={stock.ticker} 
+                    stock={stock} 
+                    type="analysis" 
+                    onStockClick={handleStockClick}
+                  />
+                ))}
+                {displayedAnalysis.length === 0 && !loading && (
+                  <p className="text-gray-500 text-center py-8">No analysis data available</p>
+                )}
+                {loading && (
+                  <div className="text-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mx-auto" />
+                    <p className="text-gray-500 mt-2">Loading analysis data...</p>
+                  </div>
+                )}
+              </div>
+            </DashboardCard>
           </div>
-        )}
+        </div>
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg shadow-sm">
+          <div className="mt-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg">
             <p>{error}</p>
-          </div>
-        )}
-
-        {/* Analysis Results */}
-        {stockData.length > 0 && (
-          <StockCard
-            title={`Analysis Results (${stockData.length} stocks)`}
-            stocks={stockData}
-            icon={AlertCircle}
-            type="analysis"
-            onStockClick={handleStockClick}
-            itemsPerPage={20}
-          />
-        )}
-
-        {!loading && !dataAvailability && (
-          <div className="text-center py-12 bg-white rounded-lg shadow-md">
-            <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No Data Available</h3>
-            <p className="text-gray-600 mb-4">Please ensure the backend server is running and data files are present.</p>
           </div>
         )}
       </div>
@@ -738,10 +954,10 @@ const formatDate = (dateStr) => {
 // Placeholder components for other pages
 const WatchlistPage = () => (
   <div className="min-h-screen bg-gray-50">
-    <Navigation onSearch={() => {}} />
+    <Header showSearch={false} />
     <div className="max-w-4xl mx-auto p-4">
       <h1 className="text-3xl font-bold mb-4">My Watchlists</h1>
-      <div className="bg-white rounded-lg shadow-md p-6 text-center">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
         <p className="text-gray-600">Watchlist feature coming soon...</p>
       </div>
     </div>
@@ -750,10 +966,10 @@ const WatchlistPage = () => (
 
 const NotesPage = () => (
   <div className="min-h-screen bg-gray-50">
-    <Navigation onSearch={() => {}} />
+    <Header showSearch={false} />
     <div className="max-w-4xl mx-auto p-4">
       <h1 className="text-3xl font-bold mb-4">My Notes</h1>
-      <div className="bg-white rounded-lg shadow-md p-6 text-center">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
         <p className="text-gray-600">Notes feature coming soon...</p>
       </div>
     </div>
@@ -762,10 +978,10 @@ const NotesPage = () => (
 
 const UpdatesPage = () => (
   <div className="min-h-screen bg-gray-50">
-    <Navigation onSearch={() => {}} />
+    <Header showSearch={false} />
     <div className="max-w-4xl mx-auto p-4">
       <h1 className="text-3xl font-bold mb-4">Market Updates</h1>
-      <div className="bg-white rounded-lg shadow-md p-6 text-center">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
         <p className="text-gray-600">Updates feature coming soon...</p>
       </div>
     </div>
